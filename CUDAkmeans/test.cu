@@ -11,22 +11,46 @@ using namespace std;
 
 
 #define N 512
-#define M 512 //threads per block
+#define M 512 //threads per block#define DIM 3
+#define K 3
+
+typedef vector<double*> Data;
+typedef vector<double*> Centroids;
+typedef vector<int> Output;
+
+
 
 __global__ void add(int *a, int *b, int *c, int n) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	if (index < n)
 		c[index] = a[index] + b[index];
-}void sequential_ints(int* a, int size)
-{
-	for (int i = 0; i < size; i++)
-		a[i] = i;
-}
+}__device__ static double eucdistance(double* data, double* centroid,int cindex ) {
+	int index = threadIdx.x + blockIdx.x * blockDim.x;
+	double distance = 0.0;
+	int size = sizeof(double); //can take 
+	for (int i = 0; i < DIM * size; i+=size) {
+		//take the square of the difference and add it to a running sum
+		distance += (data[index+i]-centroid[cindex+i]) * (data[index+i] - centroid[cindex+i]); //squared values will always be positive
+	}
+	//could take the sqrt but if a < b	implies sqrt(a) <  sqrt(b)
+	return distance;
+}
+__global__ void labelNearest(double* data, double* centroids, int* out, int n, int num_clust) {
+	int index = threadIdx.x + blockIdx.x * blockDim.x;
+
+	if (index % DIM == 0) {	//check to see if its start of point
+
+		out[index % 3] = 0;
+		double min_distance = eucdistance(data, centroids, 0);//check distance on each cluster to find minimum
+		for (int i = 1; i < num_clust; i++) {
+			if (min_distance > eucdistance(data, centroids, i))
+				out[index % 3] = i;
+		}
+
+	}
+}
 
 
-typedef vector<double*> Data;
-typedef vector<double*> Centroids;
-typedef vector<int> Output;
 
 class kmeans {
 public:
@@ -103,6 +127,12 @@ private:
 	}
 
 };
+
+void sequential_ints(int* a, int size)
+{
+	for (int i = 0; i < size; i++)
+		a[i] = i;
+}
 
 int main(void) {
 	int *a, *b, *c; // host copies of a, b, c
