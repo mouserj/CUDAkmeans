@@ -8,7 +8,7 @@
 using namespace std;
 
 
-#define N (2048*2048)
+#define N 512
 #define M 512 //threads per block
 
 __global__ void add(int *a, int *b, int *c, int n) {
