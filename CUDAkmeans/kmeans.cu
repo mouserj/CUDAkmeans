@@ -11,13 +11,15 @@ using namespace std;
 
 
 #define N 256 //data size
-#define M 256 //threads per block
+#define M 256 //threads per block
 
 __global__ void add(int *a, int *b, int *c, int n) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	if (index < n)
 		c[index] = a[index] + b[index];
-}static inline __device__ double eucdistance(double* data, double* centroid, int dim) {
+}
+
+static inline __device__ double eucdistance(double* data, double* centroid, int dim) {
 	double distance = 0.0;
 	int size = sizeof(double); //can take 
 	for (int i = 0; i < dim; i += size) {
@@ -45,7 +47,9 @@ __global__ void labelNearest(double* data, double* centroids, int* out, int n, i
 		}
 
 	}
-}void sequential_ints(int* a, int size)
+}
+
+void sequential_ints(int* a, int size)
 {
 	for (int i = 0; i < size; i++)
 		a[i] = i;
