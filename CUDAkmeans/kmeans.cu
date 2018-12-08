@@ -4,7 +4,7 @@
 #include <device_functions.h>
 #include <iostream>
 #include <vector>
-//#include <float.h>
+#include <float.h>
 
 
 using namespace std;
@@ -22,7 +22,7 @@ __global__ void add(int *a, int *b, int *c, int n) {
 static inline __device__ double eucdistance(double* data, double* centroid, int dim) {
 	double distance = 0.0;
 	int size = sizeof(double); //can take 
-	for (int i = 0; i < dim; i += size) {
+	for (int i = 0; i < dim*size; i += size) {
 		//take the square of the difference and add it to a running sum
 		distance += (data[i] - centroid[i]) * (data[i] - centroid[i]); //squared values will always be positive
 	}
@@ -78,9 +78,12 @@ public:
 		int iter = 0;
 		bool converged = false;
 		initializeCuda();
+		cout << "cuda initialized" << endl;
 		while (!converged && iter < maxIter) {
 			nearestCentroids();	//make this parallel
+			cout << "found nearest centroids" << endl;
 			converged = calcCentroids(out);	//make this parallel
+			cout << "created new centroids" << endl;
 			iter++;
 		}
 		closeCuda();
@@ -127,7 +130,8 @@ private:
 		// Copy result back to host
 		int out_size = n * sizeof(int);
 		cudaMemcpy(out, d_out, out_size, cudaMemcpyDeviceToHost);
-
+		for(int i = 0; i<n; i++)
+			cout <<"out["<<i<<"]: "<< out[i] << endl;	
 
 	}
 
@@ -137,16 +141,18 @@ private:
 		double* old = centroids; //for determining convergence
 		centroids = new double[k*dim];
 		int* count = new int[k];
-
+		cout<<"start first calcCentroid Loop" <<endl;	
 		//add up all of the data to the respective centers
 		for (int i = 0; i < n; i++) {
 			int current = out[i];
+			cout << "out["<< i <<"]: " << current<<endl;
 			for (int j = 0; j < dim; j++) {
 				centroids[current*dim + j] += data[i*dim + j];
 				count[current] += 1;
 			}
 		}
 
+		cout<<"start second calcCentroid Loop" <<endl;	
 		//average the data and test for convergence
 		for (int i = 0; i < k; i++) {
 			for (int j = 0; j < dim; j++) {
@@ -176,7 +182,7 @@ private:
 		centroids = new double[k*dim];
 		for (int i = 0; i < k; i++) {
 			for (int j = 0; j < dim; j++) {
-				centroids[i*dim + j] = fRand(min.at(k), max.at(k));
+				centroids[i*dim + j] = fRand(min.at(k-1), max.at(k-1));
 			}
 		}
 	}
@@ -202,22 +208,25 @@ int main(void) {
 	//define constants
 	static const int MAXITER = 1000;
 	static const int K = 3;
-	static const int DIM = 2;
+	static const int DIM = 3;
 	static const double DATAMAX = 10.0;
 	static const double DATAMIN = -10.0;
-
+	cout << "generating test data" << endl;
 	//generate test data
 	double *data = new double[N*DIM];
 	for (int i = 0; i < N*DIM; i++) {
 		data[i] = fRand(DATAMIN, DATAMAX);
 	}
 
+	cout << "init class" << endl;
 	//initialize kmeans class
 	Kmeans test = Kmeans(data, N, DIM);
 
+	cout << "cluster data" << endl;
 	//run kmeans
 	int* out = test.cluster(K, MAXITER);
 
+	cout << "print data" << endl;
 	//print results
 	for (int i = 0; i < N; i++) {
 		cout << out[i] << endl;
@@ -228,4 +237,4 @@ int main(void) {
 	delete[] out;
 	return 0;
 }
-
+
