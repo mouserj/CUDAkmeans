@@ -122,7 +122,7 @@ private:
 		cudaMemcpy(d_centroids, centroids, cent_size, cudaMemcpyHostToDevice);
 
 		// Launch kernel on GPU
-		labelNearest<<< (n + M - 1) / M, M >>> (d_data, d_centroids, d_out, int n, int k, int dim);
+		labelNearest<<< (n + M - 1) / M, M >>> (d_data, d_centroids, d_out, n, k, dim);
 
 		// Copy result back to host
 		int out_size = n * sizeof(int);
