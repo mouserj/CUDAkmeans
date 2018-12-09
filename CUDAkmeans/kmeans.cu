@@ -4,6 +4,7 @@
 #include <device_functions.h>
 #include <iostream>
 #include <vector>
+#include <chrono>
 #include <float.h>
 
 
@@ -218,7 +219,7 @@ int main(void) {
 	static const int DIM = 4;
 	static const double DATAMAX = 10.0;
 	static const double DATAMIN = -10.0;
-	cout << "generating test data" << endl;
+	cout << "Generating test data" << endl;
 	//generate test data
 	double *data = new double[N*DIM];
 	for (int i = 0; i < N; i++) {
@@ -227,16 +228,19 @@ int main(void) {
 		}
 	}
 
-	cout << "init class" << endl;
+
+	auto start = chrono::steady_clock::now();
 	//initialize kmeans class
 	Kmeans test = Kmeans(data, N, DIM);
 
-	cout << "cluster data" << endl;
 	//run kmeans
 	int* out = test.cluster(K, MAXITER);
+	auto end = chrono::steady_clock::now(); auto elpased = chrono::duration<double, milli>(end - start).count();
+	cout << "Processed " << MAXITER << " in " << elpased << "ms" << endl;
 
-	cout << "print data" << endl;
+	
 	//print results
+	cout << "First 16 results: " << endl;
 	for (int i = 0; i < 16; i++) {
 		cout << out[i] << endl;
 
