@@ -1,4 +1,11 @@
-
+/***
+* @file kmeans.cu
+* @authors: Jake Mouser & John Nguyen
+*
+* A Parallel approach to Lloyd's algorithm/K-Means Clustering using CUDA
+* Requires an Nvidia graphics card and appropriate CUDA toolkit and drivers
+* Currently uses randomly generated data to demonstrate the speedup of the parallel kmeans algorithm
+*/
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include <device_functions.h>
@@ -10,29 +17,44 @@
 
 using namespace std;
 
-
 #define N 33554432 //data size
 #define M 512 //threads per block
 
-
-static inline __device__ double eucdistance(double* datum, double* cent, int dim) {
+/***
+* eucdistance() - takes a point and centroid and returns the square of the euclidean distance
+* @param datum double* points to a single data point
+* @param cent double* points to a single centroid
+* @param dim int the dimensionality of the input data
+* We return the square of the euclidean distance as this is only used in comparison to other distances,
+* for two distances a,b: a < b	implies sqrt(a) <  sqrt(b)
+*/
+static inline __device__ double eucDistance(double* datum, double* cent, int dim) {
 	double distance = 0.0;
 	for (int i = 0; i < dim; i++) {
-		//take the square of the difference and add it to a running sum
+		//sum the difference between each dimension
 		distance += (datum[i] - cent[i]) * (datum[i] - cent[i]); //squared values will always be positive
 	}
-	//could take the sqrt but if a < b	implies sqrt(a) <  sqrt(b)
 	return distance;
 }
 
-
+/***
+* labelNearest() - global function for GPU to label data points in parallel
+* @param data double* points to an array of n data points
+* @param centroids double* points to an array of k centroids
+* @param out int points to the array for the output labels
+* @param n int number of data points
+* @param k int number of centroids
+* @param dim int the dimensionality of the input data
+* This function is called by each thread within the GPU. This takes a point, and compares each centroid to find the closest centroid
+* Modifies the output array of the corresponding index to write out the label
+*/
 __global__ void labelNearest(double* data, double* centroids, int* out, int n, int k, int dim) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	if (index < n) {
 		out[index] = 0;
-		double min_distance = eucdistance(data + index * dim, centroids, dim);//check distance on each cluster to find minimum
+		double min_distance = eucDistance(data + index * dim, centroids, dim);//check distance on each cluster to find minimum
 		for (int i = 1; i < k; i++) {
-			double this_Distance = eucdistance(data + index * dim, centroids + i * dim, dim);
+			double this_Distance = eucDistance(data + index * dim, centroids + i * dim, dim);
 			if (min_distance > this_Distance) {
 				out[index] = i;
 				min_distance = this_Distance;
@@ -41,19 +63,25 @@ __global__ void labelNearest(double* data, double* centroids, int* out, int n, i
 	}
 }
 
-void sequential_ints(int* a, int size)
-{
-	for (int i = 0; i < size; i++)
-		a[i] = i;
-}
-
+/***
+* fRand() - takes a range and generates a random double within the range.
+* @param min double minimum value for the random output
+* @param max double maximum value for the random output
+* This function is used for data generation, as well as generation of the centroids.
+*/
 static double fRand(double min, double max) {
 	double f = (double)rand() / RAND_MAX;
 	return min + f * (max - min);
 }
 
+/***
+* Kmeans Class 
+*
+* 
+*/
 class Kmeans {
 public:
+	//Constructor
 	Kmeans(double* data, int n, int dim) {
 		this->data = data;
 		this->n = n;
@@ -62,7 +90,12 @@ public:
 		this->maxIter = 1000;
 	}
 
-
+	/***
+	* cluster()
+	* @param k integer number of cluster
+	* @param maxIter in maximum number of iterations before stopping
+	* Once the Kmeans object is initialized this function initializes the GPU and processes the data to create cluster labels
+	*/
 	int* cluster(int k, int maxIter) {
 		this->k = k;
 		this->maxIter = maxIter;
@@ -75,7 +108,6 @@ public:
 
 			converged = calcCentroids();	//make this parallel
 
-
 			iter++;
 			cout << "num Iterations: " << iter << endl;
 		}
@@ -86,7 +118,11 @@ public:
 
 private:
 
-	/*sets up cuda arrays*/
+	/***
+	* initializeCuda()
+	* Allocates memory on the GPU and sets up cuda arrays
+	* Copies the data from the current object from main memory to the GPU memory
+	*/
 	void initializeCuda() {
 		//data sizes
 		int data_size = n * dim * sizeof(double);
@@ -108,12 +144,19 @@ private:
 		cudaMemcpy(d_out, out, out_size, cudaMemcpyHostToDevice);
 	}
 
-	/*frees device memory*/
+	/***
+	* closeCuda()
+	* Frees GPU allocated memory
+	*/
 	void closeCuda() {
 		cudaFree(d_data); cudaFree(d_centroids); cudaFree(d_out);
 	}
 
-	/* finds nearest centroids, must make parallel*/
+	/***
+	* nearestCentroids()
+	* copies the array of centroids to the GPU then starts the kernel function on the GPU
+	* This function then blocks until the kernel has completed on all threads, and copies the output back to the host machine
+	*/
 	void nearestCentroids() {
 
 		//copy centroid data to GPU
@@ -130,7 +173,11 @@ private:
 
 	}
 
-	/*recaclulates new centroids, must make parallel*/
+	/***
+	* calcCentroids()
+	* Uses the output labels to caclulate new centroids,
+	* This function is currently sequential but could possibly be imporved to be processed in parallel
+	*/
 	bool calcCentroids() {
 		bool converged = true;
 		double* old = centroids; //for determining convergence
@@ -153,7 +200,6 @@ private:
 			count[current] += 1;
 		}
 
-
 		//average the data and test for convergence
 		for (int i = 0; i < k; i++) {
 			for (int j = 0; j < dim; j++) {
@@ -167,7 +213,11 @@ private:
 		return converged;
 	}
 
-	/** I think we can paralellize this*/
+	/***
+	* randCentroid()
+	* Creates the initial centroids using random number generation
+	* This processes the input set of data to ensure that the centroids are contained within the min and max of each field
+	*/
 	void randCentroids() {
 		//get range of dataset
 		double* min = new double[dim];
@@ -195,7 +245,7 @@ private:
 		delete[] max;
 	}
 
-	// fields
+	// class fields
 	double* data;
 	double* centroids;
 	int* out;
@@ -245,6 +295,7 @@ int main(void) {
 		cout << out[i] << endl;
 
 	}
+	//prevents terminal from closing after completions until keypress
 	char blah;
 	cin >> blah;
 	//free memory

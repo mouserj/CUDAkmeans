@@ -1,3 +1,10 @@
+/***
+* @file kmeans.cu
+* @authors: Jake Mouser & John Nguyen
+*
+* A sequential approach to Lloyd's algorithm/K-Means Clustering using CUDA
+* Uses the exact same process as kmeans.cu from this project but does not use the GPU to calculate labels in parallel
+*/
 #include <iostream>
 #include <vector>
 #include <float.h>
@@ -10,7 +17,14 @@ using namespace std;
 #define N 33554432 //data size
 #define M 512 //threads per block
 
-
+/***
+* eucdistance() - takes a point and centroid and returns the square of the euclidean distance
+* @param datum double* points to a single data point
+* @param cent double* points to a single centroid
+* @param dim int the dimensionality of the input data
+* We return the square of the euclidean distance as this is only used in comparison to other distances,
+* for two distances a,b: a < b	implies sqrt(a) <  sqrt(b)
+*/
 static inline double eucdistance(double* datum, double* cent, int dim) {
 	double distance = 0.0;
 	for (int i = 0; i < dim; i++) {
@@ -21,7 +35,17 @@ static inline double eucdistance(double* datum, double* cent, int dim) {
 	return distance;
 }
 
-
+/***
+* labelNearest() - labels a data point to its nearest centroid
+* @param data double* points to an array of n data points
+* @param centroids double* points to an array of k centroids
+* @param out int points to the array for the output labels
+* @param n int number of data points
+* @param k int number of centroids
+* @param dim int the dimensionality of the input data
+* This takes a point, and compares each centroid to find the closest centroid
+* Modifies the output array of the corresponding index to write out the label
+*/
 void labelNearest(double* data, double* centroids, int* out, int n, int k, int dim) {
 	for (int index = 0; index < n; index++) {
 		out[index] = 0;
@@ -36,17 +60,22 @@ void labelNearest(double* data, double* centroids, int* out, int n, int k, int d
 	}
 }
 
-void sequential_ints(int* a, int size)
-{
-	for (int i = 0; i < size; i++)
-		a[i] = i;
-}
-
+/***
+* fRand() - takes a range and generates a random double within the range.
+* @param min double minimum value for the random output
+* @param max double maximum value for the random output
+* This function is used for data generation, as well as generation of the centroids.
+*/
 static double fRand(double min, double max) {
 	double f = (double)rand() / RAND_MAX;
 	return min + f * (max - min);
 }
 
+/***
+* KmeansSequential Class
+*
+*
+*/
 class KmeansSequential {
 public:
 	KmeansSequential(double* data, int n, int dim) {
@@ -58,7 +87,12 @@ public:
 		this->out = new int[n];
 	}
 
-
+	/***
+	* cluster()
+	* @param k integer number of cluster
+	* @param maxIter in maximum number of iterations before stopping
+	* Once the Kmeans object is initialized this function runs the main loop for the program
+	*/
 	int* cluster(int k, int maxIter) {
 		this->k = k;
 		this->maxIter = maxIter;
@@ -79,10 +113,10 @@ public:
 
 private:
 
-
-
-
-	/*recaclulates new centroids, must make parallel*/
+	/***
+	* calcCentroids()
+	* Uses the output labels to caclulate new centroids
+	*/
 	bool calcCentroids() {
 		bool converged = true;
 		double* old = centroids; //for determining convergence
@@ -119,7 +153,11 @@ private:
 		return converged;
 	}
 
-	/** I think we can paralellize this*/
+	/***
+	* randCentroid()
+	* Creates the initial centroids using random number generation
+	* This processes the input set of data to ensure that the centroids are contained within the min and max of each field
+	*/
 	void randCentroids() {
 		//get range of dataset
 		double* min = new double[dim];
