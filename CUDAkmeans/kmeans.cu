@@ -21,8 +21,8 @@ __global__ void add(int *a, int *b, int *c, int n) {
 
 static inline __device__ double eucdistance(double* data, double* centroid, int dim) {
 	double distance = 0.0;
-	int size = sizeof(double); //can take 
-	for (int i = 0; i < dim*size; i += size) {
+	
+	for (int i = 0; i < dim; i++) {
 		//take the square of the difference and add it to a running sum
 		distance += (data[i] - centroid[i]) * (data[i] - centroid[i]); //squared values will always be positive
 	}
@@ -36,12 +36,12 @@ __global__ void labelNearest(double* data, double* centroids, int* out, int n, i
 
 	if (index % dim == 0) {	//check to see if its start of point
 
-		out[index / 3] = 0;
+		out[index / dim] = 0;
 		double min_distance = eucdistance(data + index, centroids, dim);//check distance on each cluster to find minimum
 		for (int i = 1; i < k; i++) {
 			double this_Distance = eucdistance(data + index, centroids + i, dim);
 			if (min_distance > this_Distance) {
-				out[index / 3] = i;
+				out[index / dim] = i;
 				min_distance = this_Distance;
 			}
 		}
@@ -126,7 +126,7 @@ private:
 
 		// Launch kernel on GPU
 		labelNearest<<< (n + M - 1) / M, M >>> (d_data, d_centroids, d_out, n, k, dim);
-
+		cudaDeviceSynchronize();
 		// Copy result back to host
 		int out_size = n * sizeof(int);
 		cudaMemcpy(out, d_out, out_size, cudaMemcpyDeviceToHost);
