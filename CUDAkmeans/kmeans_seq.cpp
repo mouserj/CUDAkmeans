@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <float.h>
+#include <chrono>
 
 
 using namespace std;
@@ -160,27 +161,30 @@ private:
 
 int main(void) {
 	//define constants
-	static const int MAXITER = 100;
+	static const int MAXITER = 20;
 	static const int K = 4;
 	static const int DIM = 4;
 	static const double DATAMAX = 10.0;
 	static const double DATAMIN = -10.0;
 
 	//generate test data
+	cout << "Generating test data" << endl;
 	double *data = new double[N*DIM];
 	for (int i = 0; i < N; i++) {
 		for (int j = 0; j < DIM; j++) {
 			data[i*DIM + j] = fRand(DATAMIN, DATAMAX);
 		}
 	}
-
+	auto start = chrono::steady_clock::now();
 	//initialize kmeans class
 	KmeansSequential test = KmeansSequential(data, N, DIM);
 
 	//run kmeans
 	int* out = test.cluster(K, MAXITER);
-
+	auto end = chrono::steady_clock::now(); auto elpased = chrono::duration<double, milli>(end - start).count();
+	cout << "Processed " << MAXITER << " in " << elpased << "ms" << endl;
 	//print first 16 results
+	cout << "First 16 results: " << endl;
 	for (int i = 0; i < 16; i++) {
 		cout << out[i] << endl;
 
