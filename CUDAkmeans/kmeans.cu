@@ -10,21 +10,15 @@
 using namespace std;
 
 
-#define N 256 //data size
-#define M 256 //threads per block
+#define N 33554432 //data size
+#define M 512 //threads per block
 
-__global__ void add(int *a, int *b, int *c, int n) {
-	int index = threadIdx.x + blockIdx.x * blockDim.x;
-	if (index < n)
-		c[index] = a[index] + b[index];
-}
 
-static inline __device__ double eucdistance(double* data, double* centroid, int dim) {
+static inline __device__ double eucdistance(double* datum, double* cent, int dim) {
 	double distance = 0.0;
-	
 	for (int i = 0; i < dim; i++) {
 		//take the square of the difference and add it to a running sum
-		distance += (data[i] - centroid[i]) * (data[i] - centroid[i]); //squared values will always be positive
+		distance += (datum[i] - cent[i]) * (datum[i] - cent[i]); //squared values will always be positive
 	}
 	//could take the sqrt but if a < b	implies sqrt(a) <  sqrt(b)
 	return distance;
@@ -33,19 +27,16 @@ static inline __device__ double eucdistance(double* data, double* centroid, int 
 
 __global__ void labelNearest(double* data, double* centroids, int* out, int n, int k, int dim) {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
-
-	if (index % dim == 0) {	//check to see if its start of point
-
-		out[index / dim] = 0;
-		double min_distance = eucdistance(data + index, centroids, dim);//check distance on each cluster to find minimum
+	if (index < n) {
+		out[index] = 0;
+		double min_distance = eucdistance(data + index * dim, centroids, dim);//check distance on each cluster to find minimum
 		for (int i = 1; i < k; i++) {
-			double this_Distance = eucdistance(data + index, centroids + i, dim);
+			double this_Distance = eucdistance(data + index * dim, centroids + i * dim, dim);
 			if (min_distance > this_Distance) {
-				out[index / dim] = i;
+				out[index] = i;
 				min_distance = this_Distance;
 			}
 		}
-
 	}
 }
 
@@ -78,13 +69,14 @@ public:
 		int iter = 0;
 		bool converged = false;
 		initializeCuda();
-		cout << "cuda initialized" << endl;
 		while (!converged && iter < maxIter) {
 			nearestCentroids();	//make this parallel
-			cout << "found nearest centroids" << endl;
-			converged = calcCentroids(out);	//make this parallel
-			cout << "created new centroids" << endl;
+
+			converged = calcCentroids();	//make this parallel
+
+
 			iter++;
+			cout << "num Iterations: " << iter << endl;
 		}
 		closeCuda();
 		return out;
@@ -97,7 +89,7 @@ private:
 	void initializeCuda() {
 		//data sizes
 		int data_size = n * dim * sizeof(double);
-		int cent_size = n * k * sizeof(double);
+		int cent_size = k * dim * sizeof(double);
 		int out_size = n * sizeof(int);
 
 		// Alloc space for device copies of a, b, c
@@ -106,10 +98,13 @@ private:
 		cudaMalloc((void **)&d_out, out_size);
 
 		// Alloc space for host copy of output
-		out = (int *)malloc(out_size);
+		out = new int[n];
+		for (int i = 0; i < n; i++)
+			out[i] = 0;
 
 		// Copy inputs to device
 		cudaMemcpy(d_data, data, data_size, cudaMemcpyHostToDevice);
+		cudaMemcpy(d_out, out, out_size, cudaMemcpyHostToDevice);
 	}
 
 	/*frees device memory*/
@@ -118,45 +113,50 @@ private:
 	}
 
 	/* finds nearest centroids, must make parallel*/
-	void nearestCentroids(){
+	void nearestCentroids() {
 
 		//copy centroid data to GPU
-		int cent_size = n * k * sizeof(double);
+		int cent_size = dim * k * sizeof(double);
 		cudaMemcpy(d_centroids, centroids, cent_size, cudaMemcpyHostToDevice);
 
 		// Launch kernel on GPU
-		labelNearest<<< (n + M - 1) / M, M >>> (d_data, d_centroids, d_out, n, k, dim);
+		labelNearest << < (n + M - 1) / M, M >> > (d_data, d_centroids, d_out, n, k, dim);
 		cudaDeviceSynchronize();
 		// Copy result back to host
 		int out_size = n * sizeof(int);
 		cudaMemcpy(out, d_out, out_size, cudaMemcpyDeviceToHost);
-		for(int i = 0; i<n; i++)
-			cout <<"out["<<i<<"]: "<< out[i] << endl;	
+
 
 	}
 
 	/*recaclulates new centroids, must make parallel*/
-	bool calcCentroids(int *out) {
+	bool calcCentroids() {
 		bool converged = true;
 		double* old = centroids; //for determining convergence
-		centroids = new double[k*dim];
+
+		//initialize new centroids and count array
 		int* count = new int[k];
-		cout<<"start first calcCentroid Loop" <<endl;	
+		centroids = new double[k*dim];
+		for (int i = 0; i < k; i++) {
+			count[i] = 0;
+			for (int j = 0; j < dim; j++)
+				centroids[i*dim + j] = 0;
+		}
+
 		//add up all of the data to the respective centers
 		for (int i = 0; i < n; i++) {
 			int current = out[i];
-			cout << "out["<< i <<"]: " << current<<endl;
 			for (int j = 0; j < dim; j++) {
 				centroids[current*dim + j] += data[i*dim + j];
-				count[current] += 1;
 			}
+			count[current] += 1;
 		}
 
-		cout<<"start second calcCentroid Loop" <<endl;	
+
 		//average the data and test for convergence
 		for (int i = 0; i < k; i++) {
 			for (int j = 0; j < dim; j++) {
-				centroids[i*dim + j] /= count[i];
+				centroids[i*dim + j] /= (double)count[i];
 				if (centroids[i*dim + j] != old[i*dim + j])
 					converged = false;
 			}
@@ -169,22 +169,29 @@ private:
 	/** I think we can paralellize this*/
 	void randCentroids() {
 		//get range of dataset
-		vector<double> min = { DBL_MAX, DBL_MAX, DBL_MAX };
-		vector<double> max = { -DBL_MAX, -DBL_MAX, -DBL_MAX };
-	for (int i = 0; i < n; i++) {
+		double* min = new double[dim];
+		double* max = new double[dim];
+		for (int i = 0; i < dim; i++) {
+			min[i] = DBL_MAX;
+			max[i] = -DBL_MAX;
+		}
+
+		for (int i = 0; i < n; i++) {
 			for (int j = 0; j < dim; j++) {
-				if (data[i*dim + j] > max.at(j))
-					max.at(j) = data[i*dim + j];
-				if (data[i*dim + j] < min.at(j))
-					min.at(j) = data[i*dim + j];
+				if (data[i*dim + j] > max[j])
+					max[j] = data[i*dim + j];
+				if (data[i*dim + j] < min[j])
+					min[j] = data[i*dim + j];
 			}
 		}
 		centroids = new double[k*dim];
 		for (int i = 0; i < k; i++) {
 			for (int j = 0; j < dim; j++) {
-				centroids[i*dim + j] = fRand(min.at(k-1), max.at(k-1));
+				centroids[i*dim + j] = fRand(min[j], max[j]);
 			}
 		}
+		delete[] min;
+		delete[] max;
 	}
 
 	// fields
@@ -206,16 +213,18 @@ private:
 
 int main(void) {
 	//define constants
-	static const int MAXITER = 1000;
-	static const int K = 3;
-	static const int DIM = 3;
+	static const int MAXITER = 100;
+	static const int K = 4;
+	static const int DIM = 4;
 	static const double DATAMAX = 10.0;
 	static const double DATAMIN = -10.0;
 	cout << "generating test data" << endl;
 	//generate test data
 	double *data = new double[N*DIM];
-	for (int i = 0; i < N*DIM; i++) {
-		data[i] = fRand(DATAMIN, DATAMAX);
+	for (int i = 0; i < N; i++) {
+		for (int j = 0; j < DIM; j++) {
+			data[i*DIM + j] = fRand(DATAMIN, DATAMAX);
+		}
 	}
 
 	cout << "init class" << endl;
@@ -228,13 +237,14 @@ int main(void) {
 
 	cout << "print data" << endl;
 	//print results
-	for (int i = 0; i < N; i++) {
+	for (int i = 0; i < 16; i++) {
 		cout << out[i] << endl;
-	}
 
+	}
+	char blah;
+	cin >> blah;
 	//free memory
 	delete[] data;
 	delete[] out;
 	return 0;
 }
-
